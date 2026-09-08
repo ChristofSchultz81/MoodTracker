@@ -38,6 +38,29 @@ def csv_url(base_url: str) -> str:
     return f"{base_url}/MoodTracker/mood_entries.csv"
 
 
+def ensure_moodtracker_folder(base_url: str, user: str, password: str) -> bool:
+    """Legt den MoodTracker-Ordner an, falls er noch nicht existiert."""
+    folder_url = f"{base_url}/MoodTracker"
+    try:
+        response = requests.request(
+            "MKCOL",
+            folder_url,
+            auth=(user, password),
+            timeout=20,
+        )
+    except requests.RequestException as error:
+        st.error(f"MoodTracker-Ordner ist nicht erreichbar: {error}")
+        return False
+
+    if response.status_code not in (201, 405):
+        st.error(
+            "Der Nextcloud-Ordner 'MoodTracker' konnte nicht angelegt werden "
+            f"(HTTP {response.status_code}). Prüfe NC_URL und NC_USER."
+        )
+        return False
+    return True
+
+
 def load_entries(base_url: str, user: str, password: str) -> pd.DataFrame:
     """Lädt Einträge aus Nextcloud oder erstellt eine leere Tabelle."""
     try:
@@ -71,6 +94,9 @@ def save_entries(
     entries: pd.DataFrame, base_url: str, user: str, password: str
 ) -> bool:
     """Speichert alle Stimmungseinträge als CSV in Nextcloud."""
+    if not ensure_moodtracker_folder(base_url, user, password):
+        return False
+
     csv_buffer = io.StringIO()
     entries.to_csv(csv_buffer, index=False)
     try:
@@ -86,6 +112,13 @@ def save_entries(
         return False
 
     if response.status_code not in (200, 201, 204):
+        if response.status_code == 404:
+            st.error(
+                "Nextcloud meldet HTTP 404. Prüfe, dass NC_URL auf deinen "
+                "Benutzer-Dateibereich zeigt und nicht bereits '/MoodTracker' "
+                "enthält."
+            )
+            return False
         st.error(f"Nextcloud-Speicherfehler: HTTP {response.status_code}")
         return False
     return True
