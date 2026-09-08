@@ -2,7 +2,7 @@ import datetime as dt
 import io
 
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 import requests
 import streamlit as st
 
@@ -193,39 +193,27 @@ def main() -> None:
     chart_data = chart_data.groupby(
         "Date", as_index=False
     )[criterion_columns].mean()
-    chart_data = chart_data.melt(
-        id_vars="Date",
-        value_vars=criterion_columns,
-        var_name="Criterion",
-        value_name="Value",
-    )
-    chart_data["Criterion"] = chart_data["Criterion"].map(MOOD_CRITERIA)
-    chart_data = chart_data.dropna(subset=["Value"])
-
-    figure = px.line(
-        chart_data,
-        x="Date",
-        y="Value",
-        color="Criterion",
-        markers=True,
-        color_discrete_sequence=[
-            "#2563EB",
-            "#16A34A",
-            "#DC2626",
-            "#D97706",
-            "#9333EA",
-        ],
-        labels={
-            "Date": "Datum",
-            "Value": "Wert",
-            "Criterion": "Kriterium",
-        },
-    )
+    colors = ["#2563EB", "#16A34A", "#DC2626", "#D97706", "#9333EA"]
+    figure = go.Figure()
+    for criterion, color in zip(criterion_columns, colors):
+        figure.add_trace(
+            go.Scatter(
+                x=chart_data["Date"],
+                y=chart_data[criterion],
+                mode="lines+markers",
+                name=MOOD_CRITERIA[criterion],
+                line={"color": color, "width": 3},
+                marker={"color": color, "size": 8},
+                connectgaps=False,
+            )
+        )
     figure.update_layout(
         autosize=True,
         hovermode="x unified",
         legend_title_text="",
         margin={"l": 10, "r": 10, "t": 20, "b": 10},
+        xaxis_title="Datum",
+        yaxis_title="Wert (1-10)",
     )
     figure.update_yaxes(range=[1, 10], dtick=1, fixedrange=True)
     st.plotly_chart(
