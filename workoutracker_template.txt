@@ -1,0 +1,153 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import datetime
+import requests
+import io
+
+# -----------------------------------------------------------------------------
+# 1. Nextcloud Konfiguration & WebDAV-Funktionen
+# -----------------------------------------------------------------------------
+NC_URL = st.secrets.get("NC_URL", "DEINE_WEBDAV_ORDNER_URL_HIER")
+NC_USER = st.secrets.get("NC_USER", "DEIN_NEXTCLOUD_BENUTZERNAME")
+NC_PASS = st.secrets.get("NC_PASS", "DEIN_NEXTCLOUD_APP_PASSWORT")
+
+def load_csv_from_nextcloud(filename, default_columns):
+    """Lädt eine CSV-Datei aus Nextcloud. Erstellt sie, falls nicht vorhanden."""
+    url = f"{NC_URL}/{filename}" if not NC_URL.endswith('/') else f"{NC_URL}{filename}"
+    try:
+        response = requests.get(url, auth=(NC_USER, NC_PASS))
+        if response.status_code == 200:
+            return pd.read_csv(io.StringIO(response.text))
+        elif response.status_code == 404:
+            df = pd.DataFrame(columns=default_columns)
+            save_csv_to_nextcloud(filename, df)
+            return df
+        else:
+            st.error(f"⚠️ Nextcloud Ladefehler für '{filename}': Status-Code {response.status_code}")
+            st.info("Bitte überprüfe deine Secrets (URL, Benutzername und App-Passwort).")
+    except Exception as e:
+        st.error(f"Fehler beim Laden von {filename} aus Nextcloud: {e}")
+    return pd.DataFrame(columns=default_columns)
+
+def save_csv_to_nextcloud(filename, df):
+    """Speichert einen Pandas DataFrame als CSV direkt in Nextcloud."""
+    url = f"{NC_URL}/{filename}" if not NC_URL.endswith('/') else f"{NC_URL}{filename}"
+    csv_buffer = io.StringIO()
+    df.to_csv(csv_buffer, index=False)
+    try:
+        response = requests.put(url, data=csv_buffer.getvalue().encode('utf-8'), auth=(NC_USER, NC_PASS))
+        if response.status_code in [200, 201, 204]:
+            return True
+        else:
+            st.error(f"❌ Nextcloud Speicherfehler: Server antwortete mit Code {response.status_code}")
+            return False
+    except Exception as e:
+        st.error(f"Fehler beim Speichern in Nextcloud: {e}")
+        return False
+
+# -----------------------------------------------------------------------------
+# 2. Datenbasis initialisieren
+# -----------------------------------------------------------------------------
+df_exercises = load_csv_from_nextcloud("exercises.csv", ["Exercise"])
+df_logs = load_csv_from_nextcloud("logs.csv", [
+    "Date", "Exercise", 
+    "Set1_Reps", "Set1_Weight", 
+    "Set2_Reps", "Set2_Weight", 
+    "Set3_Reps", "Set3_Weight", 
+    "Total_Reps"
+])
+
+exercises = df_exercises["Exercise"].tolist()
+
+# -----------------------------------------------------------------------------
+# 3. Benutzeroberfläche (Streamlit)
+# -----------------------------------------------------------------------------
+st.set_page_config(page_title="Nextcloud Workout Tracker", layout="wide")
+st.title("☁️ Mein Nextcloud Workout Tracker")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("1. Neue Übung hinzufügen")
+    new_exercise = st.text_input("Name der Übung (z.B. Kreuzheben):")
+    
+    if st.button("Übung speichern"):
+        if len(exercises) >= 10:
+            st.error("Limit von 10 Übungen erreicht!")
+        elif new_exercise and new_exercise not in exercises:
+            new_row = pd.DataFrame([{"Exercise": new_exercise}])
+            df_exercises = pd.concat([df_exercises, new_row], ignore_index=True)
+            if save_csv_to_nextcloud("exercises.csv", df_exercises):
+                st.success(f"Übung '{new_exercise}' gespeichert!")
+                st.rerun()
+        elif new_exercise in exercises:
+            st.warning("Diese Übung existiert bereits.")
+
+with col2:
+    st.subheader("2. Training eintragen")
+    if exercises:
+        selected_ex = st.selectbox("Übung auswählen:", exercises)
+        log_date = st.date_input("Datum", datetime.date.today())
+        
+        st.write("---")
+        st.markdown("**Satz-Daten eingeben (3 Sätze):**")
+        
+        sat_col1, sat_col2, sat_col3 = st.columns(3)
+        
+        with sat_col1:
+            st.caption("⚡ **Satz 1**")
+            s1_reps = st.number_input("Wdh. (Satz 1)", min_value=0, step=1, key="s1_r")
+            s1_weight = st.number_input("Gewicht 1 (kg)", min_value=0.0, step=0.5, key="s1_w")
+            
+        with sat_col2:
+            st.caption("⚡ **Satz 2**")
+            s2_reps = st.number_input("Wdh. (Satz 2)", min_value=0, step=1, key="s2_r")
+            s2_weight = st.number_input("Gewicht 2 (kg)", min_value=0.0, step=0.5, key="s2_w")
+            
+        with sat_col3:
+            st.caption("⚡ **Satz 3**")
+            s3_reps = st.number_input("Wdh. (Satz 3)", min_value=0, step=1, key="s3_r")
+            s3_weight = st.number_input("Gewicht 3 (kg)", min_value=0.0, step=0.5, key="s3_w")
+
+        st.write("---")
+        if st.button("Trainingseinheit speichern"):
+            total_reps = int(s1_reps) + int(s2_reps) + int(s3_reps)
+            
+            new_log = pd.DataFrame([{
+                "Date": str(log_date), "Exercise": selected_ex,
+                "Set1_Reps": s1_reps, "Set1_Weight": s1_weight,
+                "Set2_Reps": s2_reps, "Set2_Weight": s2_weight,
+                "Set3_Reps": s3_reps, "Set3_Weight": s3_weight,
+                "Total_Reps": total_reps
+            }])
+            
+            df_logs = pd.concat([df_logs, new_log], ignore_index=True)
+            if save_csv_to_nextcloud("logs.csv", df_logs):
+                st.success("Erfolgreich gespeichert!")
+                st.rerun()
+    else:
+        st.info("Bitte füge zuerst eine Übung hinzu.")
+
+st.divider()
+
+# -----------------------------------------------------------------------------
+# 4. Diagramm-Auswertung
+# -----------------------------------------------------------------------------
+st.subheader("📈 Dein Trainingsfortschritt")
+
+if not df_logs.empty:
+    df_plot = df_logs.copy()
+    df_plot["Date"] = pd.to_datetime(df_plot["Date"]).dt.date
+    df_plot["Total_Reps"] = pd.to_numeric(df_plot["Total_Reps"])
+    
+    df_grouped = df_plot.groupby(["Date", "Exercise"], as_index=False)["Total_Reps"].sum()
+    
+    fig = px.line(
+        df_grouped, x="Date", y="Total_Reps", color="Exercise", markers=True,
+        title="Gesamtwiederholungen (Summe aller Sätze) über Zeit",
+        labels={"Date": "Datum", "Total_Reps": "Wiederholungen (Gesamt)", "Exercise": "Übung"}
+    )
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.write("Noch keine CSV-Daten vorhanden.")
