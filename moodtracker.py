@@ -2,6 +2,7 @@ import datetime as dt
 import io
 
 import pandas as pd
+import plotly.express as px
 import requests
 import streamlit as st
 
@@ -126,7 +127,7 @@ def save_entries(
 
 def main() -> None:
     """Baut die Streamlit-Oberfläche für Stimmungseinträge und Auswertung."""
-    st.set_page_config(page_title=APP_TITLE, page_icon="🌤️", layout="centered")
+    st.set_page_config(page_title=APP_TITLE, page_icon="🌤️", layout="wide")
     st.title(APP_TITLE)
     st.write(
         "Halte täglich fest, wie du dich fühlst. Die Werte reichen von 1 "
@@ -183,16 +184,47 @@ def main() -> None:
 
     chart_data = entries.copy()
     chart_data["Date"] = pd.to_datetime(chart_data["Date"], errors="coerce")
-    chart_data["Mood"] = pd.to_numeric(chart_data["Mood"], errors="coerce")
-    chart_data = chart_data.dropna(subset=["Date", "Mood"])
-    chart_data = (
-        chart_data.groupby("Date", as_index=True)["Mood"].mean().sort_index()
+    criterion_columns = list(MOOD_CRITERIA)
+    for criterion in criterion_columns:
+        chart_data[criterion] = pd.to_numeric(
+            chart_data[criterion], errors="coerce"
+        )
+    chart_data = chart_data.dropna(subset=["Date"])
+    chart_data = chart_data.groupby(
+        "Date", as_index=False
+    )[criterion_columns].mean()
+    chart_data = chart_data.melt(
+        id_vars="Date",
+        value_vars=criterion_columns,
+        var_name="Criterion",
+        value_name="Value",
     )
-    st.line_chart(
+    chart_data["Criterion"] = chart_data["Criterion"].map(MOOD_CRITERIA)
+    chart_data = chart_data.dropna(subset=["Value"])
+
+    figure = px.line(
         chart_data,
-        y="Mood",
-        y_label="Grundstimmung (1-10)",
-        x_label="Datum",
+        x="Date",
+        y="Value",
+        color="Criterion",
+        markers=True,
+        labels={
+            "Date": "Datum",
+            "Value": "Wert",
+            "Criterion": "Kriterium",
+        },
+    )
+    figure.update_layout(
+        autosize=True,
+        hovermode="x unified",
+        legend_title_text="",
+        margin={"l": 10, "r": 10, "t": 20, "b": 10},
+    )
+    figure.update_yaxes(autorange=True, rangemode="normal", dtick=1)
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+        config={"responsive": True, "displayModeBar": False},
     )
 
 
