@@ -22,7 +22,7 @@ MOOD_CRITERIA = {
     "Energy": "Energie",
     "Stress": "Stress",
     "SleepQuality": "Schlafqualität",
-    "SocialConnection": "Sozial verbunden",
+    "SocialConnection": "Soziale Verbundenheit",
 }
 
 
@@ -208,6 +208,13 @@ def main() -> None:
         y="Value",
         color="Criterion",
         markers=True,
+        color_discrete_sequence=[
+            "#2563EB",
+            "#16A34A",
+            "#DC2626",
+            "#D97706",
+            "#9333EA",
+        ],
         labels={
             "Date": "Datum",
             "Value": "Wert",
@@ -220,7 +227,7 @@ def main() -> None:
         legend_title_text="",
         margin={"l": 10, "r": 10, "t": 20, "b": 10},
     )
-    figure.update_yaxes(autorange=True, rangemode="normal", dtick=1)
+    figure.update_yaxes(range=[1, 10], dtick=1, fixedrange=True)
     st.plotly_chart(
         figure,
         use_container_width=True,
